@@ -4,21 +4,18 @@ name: Crear APK de Bolita
 on:
   workflow_dispatch:
   push:
-    branches:
-      - principal
-      - main
-      - master
+    branches: [principal, main, master]
 
 permissions:
   contents: read
 
 jobs:
   construir:
-    name: Construir APK de Bolita
+    name: Construir APK con icono personalizado
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar archivos del repositorio
+      - name: Descargar archivos
         uses: actions/checkout@v4
 
       - name: Preparar Java
@@ -37,17 +34,16 @@ jobs:
           ZIP=$(find . -maxdepth 5 -type f -iname '*.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No se encontró ningún archivo ZIP."
-            echo "Archivos del repositorio:"
+            echo "ERROR: No se encontró el ZIP del proyecto."
             find . -maxdepth 4 -type f
             exit 1
           fi
 
-          echo "Archivo encontrado: $ZIP"
+          echo "ZIP encontrado: $ZIP"
           mkdir -p proyecto
           unzip -o "$ZIP" -d proyecto
 
-      - name: Localizar el proyecto
+      - name: Localizar proyecto
         run: |
           ARCHIVO=$(find proyecto -type f -name package.json | head -n 1)
 
@@ -59,22 +55,55 @@ jobs:
 
           CARPETA=$(dirname "$ARCHIVO")
           echo "PROYECTO=$CARPETA" >> "$GITHUB_ENV"
-          echo "Proyecto localizado en: $CARPETA"
 
           test -f "$CARPETA/capacitor.config.json"
           test -f "$CARPETA/www/index.html"
+          test -f "$CARPETA/assets/icon.png"
 
       - name: Instalar dependencias
         run: npm install
         working-directory: ${{ env.PROYECTO }}
 
-      - name: Preparar proyecto Android
+      - name: Crear proyecto Android
         run: npx cap add android
         working-directory: ${{ env.PROYECTO }}
 
-      - name: Sincronizar archivos
+      - name: Sincronizar aplicación
         run: npx cap sync android
         working-directory: ${{ env.PROYECTO }}
+
+      - name: Aplicar icono de bolas numeradas
+        working-directory: ${{ env.PROYECTO }}
+        run: |
+          python3 -m pip install Pillow
+
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          res = Path("android/app/src/main/res")
+          icon_path = Path("assets/icon.png")
+
+          if not icon_path.exists():
+              raise SystemExit("ERROR: No existe assets/icon.png")
+
+          icon = Image.open(icon_path).convert("RGBA")
+
+          for density, size in [
+              ("mdpi", 48),
+              ("hdpi", 72),
+              ("xhdpi", 96),
+              ("xxhdpi", 144),
+              ("xxxhdpi", 192)
+          ]:
+              folder = res / f"mipmap-{density}"
+              folder.mkdir(parents=True, exist_ok=True)
+              resized = icon.resize((size, size), Image.Resampling.LANCZOS)
+              resized.save(folder / "ic_launcher.png")
+              resized.save(folder / "ic_launcher_round.png")
+
+          print("Iconos personalizados generados.")
+          PY
 
       - name: Construir APK
         working-directory: ${{ env.PROYECTO }}/android
@@ -85,7 +114,7 @@ jobs:
       - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK
+          name: Bolita-APK-con-icono
           path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
