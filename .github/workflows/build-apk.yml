@@ -31,7 +31,7 @@ jobs:
 
       - name: Buscar ZIP actualizado
         run: |
-          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-eliminar-todas-las-jugadas.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-regla-80-sin-corrido.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "ERROR: No se encontró el ZIP actualizado."
@@ -80,7 +80,7 @@ jobs:
       - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK-eliminar-todas-las-jugadas
+          name: Bolita-APK-regla-80-sin-corrido
           path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
