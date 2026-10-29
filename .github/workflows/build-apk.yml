@@ -31,11 +31,11 @@ jobs:
 
       - name: Buscar ZIP actualizado
         run: |
-          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-botones-juntos.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-parlet-linea-10.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "ERROR: No se encontró el ZIP actualizado."
-            find . -maxdepth 3 -type f
+            find . -maxdepth 4 -type f
             exit 1
           fi
 
@@ -49,7 +49,7 @@ jobs:
 
           if [ -z "$ARCHIVO" ]; then
             echo "ERROR: El ZIP no contiene package.json."
-            find proyecto -maxdepth 4 -type f
+            find proyecto -maxdepth 5 -type f
             exit 1
           fi
 
@@ -80,7 +80,7 @@ jobs:
       - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK-botones-juntos
+          name: Bolita-APK-corregida
           path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
