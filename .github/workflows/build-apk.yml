@@ -4,17 +4,18 @@ name: Crear APK de Bolita
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  construir:
+    name: Construir aplicación Android
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar el proyecto
+      - name: Descargar archivos
         uses: actions/checkout@v4
 
       - name: Preparar Java
@@ -28,22 +29,31 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Descomprimir el proyecto
+        run: |
+          mkdir proyecto
+          unzip -o Bolita-Proyecto-Completo.zip -d proyecto
+          test -f proyecto/package.json
+
       - name: Instalar dependencias
+        working-directory: proyecto
         run: npm install
 
-      - name: Crear proyecto Android
+      - name: Preparar Android
+        working-directory: proyecto
         run: npx cap add android
 
       - name: Sincronizar aplicación
+        working-directory: proyecto
         run: npx cap sync android
 
       - name: Construir APK
-        working-directory: android
+        working-directory: proyecto/android
         run: chmod +x gradlew && ./gradlew assembleDebug
 
-      - name: Guardar APK descargable
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Bolita-APK
+          path: proyecto/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
