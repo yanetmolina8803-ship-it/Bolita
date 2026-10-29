@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   construir:
-    name: Construir APK con icono correcto
+    name: Construir APK con icono personalizado
     runs-on: ubuntu-latest
 
     steps:
@@ -55,18 +55,18 @@ jobs:
           test -f "$CARPETA/assets/icon.png"
 
       - name: Instalar dependencias
-        run: npm install
         working-directory: ${{ env.PROYECTO }}
+        run: npm install
 
       - name: Crear proyecto Android
-        run: npx cap add android
         working-directory: ${{ env.PROYECTO }}
+        run: npx cap add android
 
       - name: Sincronizar aplicación
-        run: npx cap sync android
         working-directory: ${{ env.PROYECTO }}
+        run: npx cap sync android
 
-      - name: Crear iconos Android personalizados
+      - name: Aplicar icono y fondo sin duplicar recursos
         working-directory: ${{ env.PROYECTO }}
         run: |
           python3 -m pip install Pillow
@@ -84,7 +84,7 @@ jobs:
 
           imagen = Image.open(origen).convert("RGBA")
 
-          # Iconos clásicos para distintas densidades.
+          # Iconos para distintas densidades.
           for densidad, tamano in [
               ("mdpi", 48),
               ("hdpi", 72),
@@ -100,64 +100,72 @@ jobs:
               icono.save(carpeta / "ic_launcher.png")
               icono.save(carpeta / "ic_launcher_round.png")
 
-          # Imagen frontal para el icono adaptativo de Android.
-          lienzo = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
-          frontal = imagen.resize(
-              (360, 360), Image.Resampling.LANCZOS
-          )
-          lienzo.alpha_composite(frontal, (36, 36))
-
+          # Icono frontal transparente para Android adaptativo.
           carpeta_dibujos = res / "drawable"
           carpeta_dibujos.mkdir(parents=True, exist_ok=True)
-          lienzo.save(carpeta_dibujos / "ic_launcher_foreground.png")
 
-          # Fondo rojo del icono adaptativo.
+          frontal = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
+          figura = imagen.resize((360, 360), Image.Resampling.LANCZOS)
+          frontal.alpha_composite(figura, (36, 36))
+          frontal.save(carpeta_dibujos / "ic_launcher_foreground.png")
+
+          # Actualizar el color existente, sin crear colors.xml duplicado.
           valores = res / "values"
           valores.mkdir(parents=True, exist_ok=True)
-          archivo_colores = valores / "colors.xml"
 
-          if archivo_colores.exists():
-              arbol = ET.parse(archivo_colores)
-              raiz = arbol.getroot()
-          else:
+          archivo_color = None
+          arbol_color = None
+          nodo_color = None
+
+          for archivo in valores.glob("*.xml"):
+              try:
+                  arbol = ET.parse(archivo)
+                  nodo = arbol.getroot().find(
+                      "./color[@name='ic_launcher_background']"
+                  )
+                  if nodo is not None:
+                      archivo_color = archivo
+                      arbol_color = arbol
+                      nodo_color = nodo
+                      break
+              except ET.ParseError:
+                  continue
+
+          if nodo_color is None:
+              archivo_color = valores / "ic_launcher_background.xml"
               raiz = ET.Element("resources")
-              arbol = ET.ElementTree(raiz)
-
-          color = raiz.find("./color[@name='ic_launcher_background']")
-          if color is None:
-              color = ET.SubElement(
-                  raiz, "color", {"name": "ic_launcher_background"}
+              nodo_color = ET.SubElement(
+                  raiz, "color",
+                  {"name": "ic_launcher_background"}
               )
-          color.text = "#B90018"
-          arbol.write(
-              archivo_colores, encoding="utf-8", xml_declaration=True
+              arbol_color = ET.ElementTree(raiz)
+
+          nodo_color.text = "#B90018"
+          arbol_color.write(
+              archivo_color,
+              encoding="utf-8",
+              xml_declaration=True
           )
 
-          # Android 8 y posteriores usan estos archivos XML.
+          # Configurar los iconos adaptativos.
           adaptativos = res / "mipmap-anydpi-v26"
           adaptativos.mkdir(parents=True, exist_ok=True)
 
-          contenido = """<?xml version="1.0" encoding="utf-8"?>
+          contenido = '''<?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
               <background android:drawable="@color/ic_launcher_background"/>
               <foreground android:drawable="@drawable/ic_launcher_foreground"/>
           </adaptive-icon>
-          """
+          '''
 
           for nombre in ["ic_launcher.xml", "ic_launcher_round.xml"]:
               (adaptativos / nombre).write_text(
                   contenido, encoding="utf-8"
               )
 
-          print("Iconos clásicos y adaptativos creados correctamente.")
+          print("Icono personalizado y fondo rojo configurados.")
+          print("Color actualizado en:", archivo_color)
           PY
-
-      - name: Comprobar iconos creados
-        working-directory: ${{ env.PROYECTO }}
-        run: |
-          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
-          echo "Comprobación de iconos completada."
 
       - name: Construir APK
         working-directory: ${{ env.PROYECTO }}/android
