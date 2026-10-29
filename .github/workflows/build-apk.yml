@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   construir:
-    name: Construir APK con icono personalizado
+    name: Construir APK con icono correcto
     runs-on: ubuntu-latest
 
     steps:
@@ -29,27 +29,21 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Buscar y descomprimir el ZIP
+      - name: Buscar y descomprimir ZIP
         run: |
           ZIP=$(find . -maxdepth 5 -type f -iname '*.zip' | head -n 1)
-
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No se encontró el ZIP del proyecto."
-            find . -maxdepth 4 -type f
+            echo "ERROR: No se encontró el ZIP."
             exit 1
           fi
-
-          echo "ZIP encontrado: $ZIP"
           mkdir -p proyecto
           unzip -o "$ZIP" -d proyecto
 
       - name: Localizar proyecto
         run: |
           ARCHIVO=$(find proyecto -type f -name package.json | head -n 1)
-
           if [ -z "$ARCHIVO" ]; then
-            echo "ERROR: El ZIP no contiene package.json."
-            find proyecto -maxdepth 5 -type f
+            echo "ERROR: Falta package.json."
             exit 1
           fi
 
@@ -72,7 +66,7 @@ jobs:
         run: npx cap sync android
         working-directory: ${{ env.PROYECTO }}
 
-      - name: Aplicar icono de bolas numeradas
+      - name: Crear iconos Android personalizados
         working-directory: ${{ env.PROYECTO }}
         run: |
           python3 -m pip install Pillow
@@ -80,30 +74,90 @@ jobs:
           python3 - <<'PY'
           from PIL import Image
           from pathlib import Path
+          import xml.etree.ElementTree as ET
 
           res = Path("android/app/src/main/res")
-          icon_path = Path("assets/icon.png")
+          origen = Path("assets/icon.png")
 
-          if not icon_path.exists():
-              raise SystemExit("ERROR: No existe assets/icon.png")
+          if not origen.exists():
+              raise SystemExit("ERROR: Falta assets/icon.png")
 
-          icon = Image.open(icon_path).convert("RGBA")
+          imagen = Image.open(origen).convert("RGBA")
 
-          for density, size in [
+          # Iconos clásicos para distintas densidades.
+          for densidad, tamano in [
               ("mdpi", 48),
               ("hdpi", 72),
               ("xhdpi", 96),
               ("xxhdpi", 144),
               ("xxxhdpi", 192)
           ]:
-              folder = res / f"mipmap-{density}"
-              folder.mkdir(parents=True, exist_ok=True)
-              resized = icon.resize((size, size), Image.Resampling.LANCZOS)
-              resized.save(folder / "ic_launcher.png")
-              resized.save(folder / "ic_launcher_round.png")
+              carpeta = res / f"mipmap-{densidad}"
+              carpeta.mkdir(parents=True, exist_ok=True)
+              icono = imagen.resize(
+                  (tamano, tamano), Image.Resampling.LANCZOS
+              )
+              icono.save(carpeta / "ic_launcher.png")
+              icono.save(carpeta / "ic_launcher_round.png")
 
-          print("Iconos personalizados generados.")
+          # Imagen frontal para el icono adaptativo de Android.
+          lienzo = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
+          frontal = imagen.resize(
+              (360, 360), Image.Resampling.LANCZOS
+          )
+          lienzo.alpha_composite(frontal, (36, 36))
+
+          carpeta_dibujos = res / "drawable"
+          carpeta_dibujos.mkdir(parents=True, exist_ok=True)
+          lienzo.save(carpeta_dibujos / "ic_launcher_foreground.png")
+
+          # Fondo rojo del icono adaptativo.
+          valores = res / "values"
+          valores.mkdir(parents=True, exist_ok=True)
+          archivo_colores = valores / "colors.xml"
+
+          if archivo_colores.exists():
+              arbol = ET.parse(archivo_colores)
+              raiz = arbol.getroot()
+          else:
+              raiz = ET.Element("resources")
+              arbol = ET.ElementTree(raiz)
+
+          color = raiz.find("./color[@name='ic_launcher_background']")
+          if color is None:
+              color = ET.SubElement(
+                  raiz, "color", {"name": "ic_launcher_background"}
+              )
+          color.text = "#B90018"
+          arbol.write(
+              archivo_colores, encoding="utf-8", xml_declaration=True
+          )
+
+          # Android 8 y posteriores usan estos archivos XML.
+          adaptativos = res / "mipmap-anydpi-v26"
+          adaptativos.mkdir(parents=True, exist_ok=True)
+
+          contenido = """<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          """
+
+          for nombre in ["ic_launcher.xml", "ic_launcher_round.xml"]:
+              (adaptativos / nombre).write_text(
+                  contenido, encoding="utf-8"
+              )
+
+          print("Iconos clásicos y adaptativos creados correctamente.")
           PY
+
+      - name: Comprobar iconos creados
+        working-directory: ${{ env.PROYECTO }}
+        run: |
+          test -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          test -f android/app/src/main/res/drawable/ic_launcher_foreground.png
+          echo "Comprobación de iconos completada."
 
       - name: Construir APK
         working-directory: ${{ env.PROYECTO }}/android
@@ -111,10 +165,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Guardar APK para descargar
+      - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK-con-icono
+          name: Bolita-APK-icono-corregido
           path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
