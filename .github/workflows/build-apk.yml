@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   construir:
-    name: Construir Bolita con icono personalizado
+    name: Construir APK de Bolita
     runs-on: ubuntu-latest
 
     steps:
@@ -29,15 +29,17 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Buscar y descomprimir proyecto
+      - name: Buscar ZIP actualizado
         run: |
-          ZIP=$(find . -maxdepth 5 -type f -iname '*.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-botones-juntos.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No se encontró el ZIP."
+            echo "ERROR: No se encontró el ZIP actualizado."
+            find . -maxdepth 3 -type f
             exit 1
           fi
 
+          echo "ZIP encontrado: $ZIP"
           mkdir -p proyecto
           unzip -o "$ZIP" -d proyecto
 
@@ -46,7 +48,8 @@ jobs:
           ARCHIVO=$(find proyecto -type f -name package.json | head -n 1)
 
           if [ -z "$ARCHIVO" ]; then
-            echo "ERROR: Falta package.json dentro del ZIP."
+            echo "ERROR: El ZIP no contiene package.json."
+            find proyecto -maxdepth 4 -type f
             exit 1
           fi
 
@@ -55,15 +58,6 @@ jobs:
 
           test -f "$CARPETA/capacitor.config.json"
           test -f "$CARPETA/www/index.html"
-
-      - name: Comprobar icono personalizado
-        run: |
-          if [ ! -f icon-bolita.png ]; then
-            echo "ERROR: Falta icon-bolita.png en la raíz del repositorio."
-            exit 1
-          fi
-
-          file icon-bolita.png
 
       - name: Instalar dependencias
         working-directory: ${{ env.PROYECTO }}
@@ -77,129 +71,16 @@ jobs:
         working-directory: ${{ env.PROYECTO }}
         run: npx cap sync android
 
-      - name: Aplicar el icono de bolas numeradas
-        run: |
-          mkdir -p "$PROYECTO/assets"
-          cp icon-bolita.png "$PROYECTO/assets/icon.png"
-          python3 -m pip install Pillow
-
-          cd "$PROYECTO"
-
-          python3 - <<'PY'
-          from PIL import Image
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          res = Path("android/app/src/main/res")
-          origen = Path("assets/icon.png")
-
-          if not origen.exists():
-              raise SystemExit("ERROR: No se encuentra el icono.")
-
-          imagen = Image.open(origen).convert("RGBA")
-
-          # Crear iconos clásicos para todas las densidades.
-          for densidad, tamano in [
-              ("mdpi", 48),
-              ("hdpi", 72),
-              ("xhdpi", 96),
-              ("xxhdpi", 144),
-              ("xxxhdpi", 192)
-          ]:
-              carpeta = res / f"mipmap-{densidad}"
-              carpeta.mkdir(parents=True, exist_ok=True)
-
-              icono = imagen.resize(
-                  (tamano, tamano), Image.Resampling.LANCZOS
-              )
-
-              icono.save(carpeta / "ic_launcher.png")
-              icono.save(carpeta / "ic_launcher_round.png")
-
-          # Crear el primer plano del icono adaptativo.
-          drawable = res / "drawable"
-          drawable.mkdir(parents=True, exist_ok=True)
-
-          frontal = Image.new("RGBA", (432, 432), (0, 0, 0, 0))
-          figura = imagen.resize((360, 360), Image.Resampling.LANCZOS)
-          frontal.alpha_composite(figura, (36, 36))
-          frontal.save(drawable / "ic_launcher_foreground.png")
-
-          # Actualizar una sola definición del color de fondo.
-          valores = res / "values"
-          valores.mkdir(parents=True, exist_ok=True)
-
-          encontrados = []
-
-          for archivo in valores.glob("*.xml"):
-              try:
-                  arbol = ET.parse(archivo)
-                  nodo = arbol.getroot().find(
-                      "./color[@name='ic_launcher_background']"
-                  )
-                  if nodo is not None:
-                      encontrados.append((archivo, arbol, nodo))
-              except ET.ParseError:
-                  continue
-
-          if encontrados:
-              archivo, arbol, nodo = encontrados[0]
-              nodo.text = "#B90018"
-              arbol.write(
-                  archivo, encoding="utf-8", xml_declaration=True
-              )
-
-              # Eliminar definiciones duplicadas del mismo color.
-              for archivo_extra, arbol_extra, nodo_extra in encontrados[1:]:
-                  raiz = arbol_extra.getroot()
-                  raiz.remove(nodo_extra)
-                  arbol_extra.write(
-                      archivo_extra,
-                      encoding="utf-8",
-                      xml_declaration=True
-                  )
-          else:
-              raiz = ET.Element("resources")
-              nodo = ET.SubElement(
-                  raiz, "color",
-                  {"name": "ic_launcher_background"}
-              )
-              nodo.text = "#B90018"
-              ET.ElementTree(raiz).write(
-                  valores / "ic_launcher_background.xml",
-                  encoding="utf-8",
-                  xml_declaration=True
-              )
-
-          # Crear los iconos adaptativos para Android 8 o superior.
-          adaptativos = res / "mipmap-anydpi-v26"
-          adaptativos.mkdir(parents=True, exist_ok=True)
-
-          contenido = '''<?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background"/>
-              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
-          </adaptive-icon>
-          '''
-
-          for nombre in ("ic_launcher.xml", "ic_launcher_round.xml"):
-              (adaptativos / nombre).write_text(
-                  contenido, encoding="utf-8"
-              )
-
-          print("Icono personalizado aplicado:", origen)
-          PY
-
       - name: Construir APK
         working-directory: ${{ env.PROYECTO }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Guardar APK descargable
+      - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
-          name: Bolita-APK-icono-nuevo
+          name: Bolita-APK-botones-juntos
           path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
