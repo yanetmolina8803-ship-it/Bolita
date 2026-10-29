@@ -4,18 +4,21 @@ name: Crear APK de Bolita
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - principal
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
   construir:
-    name: Construir aplicación Android
+    name: Construir APK de Bolita
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar archivos
+      - name: Descargar archivos del repositorio
         uses: actions/checkout@v4
 
       - name: Preparar Java
@@ -27,33 +30,62 @@ jobs:
       - name: Preparar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Descomprimir el proyecto
+      - name: Buscar y descomprimir el ZIP
         run: |
-          mkdir proyecto
-          unzip -o Bolita-Proyecto-Completo.zip -d proyecto
-          test -f proyecto/package.json
+          ZIP=$(find . -maxdepth 5 -type f -iname '*.zip' | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No se encontró ningún archivo ZIP."
+            echo "Archivos del repositorio:"
+            find . -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "Archivo encontrado: $ZIP"
+          mkdir -p proyecto
+          unzip -o "$ZIP" -d proyecto
+
+      - name: Localizar el proyecto
+        run: |
+          ARCHIVO=$(find proyecto -type f -name package.json | head -n 1)
+
+          if [ -z "$ARCHIVO" ]; then
+            echo "ERROR: El ZIP no contiene package.json."
+            find proyecto -maxdepth 5 -type f
+            exit 1
+          fi
+
+          CARPETA=$(dirname "$ARCHIVO")
+          echo "PROYECTO=$CARPETA" >> "$GITHUB_ENV"
+          echo "Proyecto localizado en: $CARPETA"
+
+          test -f "$CARPETA/capacitor.config.json"
+          test -f "$CARPETA/www/index.html"
 
       - name: Instalar dependencias
-        working-directory: proyecto
         run: npm install
+        working-directory: ${{ env.PROYECTO }}
 
-      - name: Preparar Android
-        working-directory: proyecto
+      - name: Preparar proyecto Android
         run: npx cap add android
+        working-directory: ${{ env.PROYECTO }}
 
-      - name: Sincronizar aplicación
-        working-directory: proyecto
+      - name: Sincronizar archivos
         run: npx cap sync android
+        working-directory: ${{ env.PROYECTO }}
 
       - name: Construir APK
-        working-directory: proyecto/android
-        run: chmod +x gradlew && ./gradlew assembleDebug
+        working-directory: ${{ env.PROYECTO }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: Guardar APK
+      - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
           name: Bolita-APK
-          path: proyecto/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROYECTO }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
