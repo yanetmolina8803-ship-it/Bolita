@@ -31,7 +31,7 @@ jobs:
 
       - name: Buscar ZIP actualizado
         run: |
-          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-vista-previa-se-borra-al-guardar.zip' | head -n 1)
+          ZIP=$(find . -maxdepth 5 -type f -iname 'Bolita-Proyecto-Completo-vista-previa-oculta-correctamente.zip' | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "ERROR: No se encontró el ZIP actualizado."
